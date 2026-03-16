@@ -236,12 +236,25 @@ class _GitSync(object):
             return 1, "", "repo not found: {}".format(repo)
 
         cmd = [self._git_executable()] + list(args)
+        startupinfo = None
+        creationflags = 0
+        if os.name == "nt":
+            try:
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            except Exception:
+                startupinfo = None
+                creationflags = 0
         try:
             proc = subprocess.Popen(
                 cmd,
                 cwd=repo,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
             )
         except Exception as exc:
             return 1, "", _to_text(exc)
