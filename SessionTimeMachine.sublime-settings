@@ -8,6 +8,11 @@
   "snapshot_auto_save_session": true,
   "snapshot_session_file": true,
 
+  "rollback_list_limit": 200,
+  "rollback_restore_open_files": true,
+  "rollback_restore_unsaved_buffers": true,
+  "path_mappings": [],
+
   "sync_enabled": false,
   "sync_backend": "git",
   "sync_min_interval_seconds": 60,

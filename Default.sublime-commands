@@ -1,0 +1,6 @@
+[
+  {
+    "caption": "SessionTimeMachine: Rollback History",
+    "command": "session_time_machine_rollback"
+  }
+]

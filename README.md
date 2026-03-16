@@ -1,17 +1,21 @@
 # SessionTimeMachine
 
-Sublime Text 3 插件原型：提供 Session 本地快照、User 配置备份与可选 Git 同步。
+Sublime Text 3 插件原型：提供 Session 本地快照、User 配置备份、回滚与可选 Git 同步。
 
 ## 功能（当前阶段）
 - 定时备份 `Auto Save Session.sublime_session` 与 `Session.sublime_session` 到本地快照目录。
 - 保存 `Packages/User` 下配置文件时自动备份。
 - 按保留数量自动清理最旧快照。
+- 回滚历史：从快照重建打开文件与未保存缓冲区。
 - 可选 Git 同步：启动时拉取，快照后推送。
 
 ## 安装与使用
-1. 将 `session_time_machine.py` 与 `SessionTimeMachine.sublime-settings` 放入 Sublime Text 3 的 `Packages/User` 目录。
+1. 将 `session_time_machine.py`、`SessionTimeMachine.sublime-settings`、`Default.sublime-commands` 放入 Sublime Text 3 的 `Packages/User` 目录。
 2. 重启 Sublime Text 3。
 3. 默认每 5 分钟生成一次 Session 快照。
+
+## 回滚使用
+打开 Command Palette，执行 `SessionTimeMachine: Rollback History`，选择一个快照即可恢复。
 
 ## 配置
 编辑 `SessionTimeMachine.sublime-settings`：
@@ -22,6 +26,12 @@ Sublime Text 3 插件原型：提供 Session 本地快照、User 配置备份与
 - `backup_root`: 备份目录（为空则使用 Data 目录下 `.sync_backup`）。
 - `snapshot_auto_save_session`: 是否备份 `Auto Save Session.sublime_session`。
 - `snapshot_session_file`: 是否备份 `Session.sublime_session`。
+
+回滚相关：
+- `rollback_list_limit`: 回滚列表展示的最大快照数量。
+- `rollback_restore_open_files`: 是否恢复历史打开文件。
+- `rollback_restore_unsaved_buffers`: 是否恢复未保存缓冲区。
+- `path_mappings`: 跨平台路径映射。例：`[{"from": "C:\\Projects\\", "to": "/home/user/projects/"}]`。
 
 Git 同步相关：
 - `sync_enabled`: 是否启用同步。
@@ -40,5 +50,4 @@ Git 同步相关：
 - `.sync_backup/user/YYYYMMDD`：User 配置文件快照（按日期分目录）。
 
 ## 下一步
-- Session 解析与回滚（Quick Panel 选择历史）。
 - SQLite 索引与历史文本搜索。

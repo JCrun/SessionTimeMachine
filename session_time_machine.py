@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ DEFAULT_INTERVAL_SECONDS = 300
 DEFAULT_RETENTION = 200
 MIN_INTERVAL_SECONDS = 10
 DEFAULT_SYNC_MIN_INTERVAL = 60
+DEFAULT_ROLLBACK_LIMIT = 200
 
 
 def _to_text(value):
@@ -335,6 +337,182 @@ def plugin_loaded():
     settings = _settings()
     if settings.get("sync_pull_on_startup", True):
         _git_sync.pull_async()
+
+
+def _list_session_snapshots():
+    root = os.path.join(_backup_root(), "session")
+    entries = []
+    if not os.path.isdir(root):
+        return entries
+
+    for dirpath, _, files in os.walk(root):
+        for name in files:
+            if not name.endswith(".bak"):
+                continue
+            path = os.path.join(dirpath, name)
+            ts = os.path.getmtime(path)
+            entries.append((ts, name, path))
+
+    entries.sort(key=lambda item: item[0], reverse=True)
+    limit = int(_settings().get("rollback_list_limit", DEFAULT_ROLLBACK_LIMIT))
+    if limit > 0:
+        entries = entries[:limit]
+    return entries
+
+
+def _parse_session_file(path):
+    try:
+        with open(path, "r") as handle:
+            data = handle.read()
+        return json.loads(data)
+    except Exception as exc:
+        sublime.status_message("SessionTimeMachine: parse failed ({})".format(exc))
+        return None
+
+
+def _apply_path_mappings(path):
+    settings = _settings()
+    mappings = settings.get("path_mappings", [])
+    if not isinstance(mappings, list):
+        return path
+    original = path
+    for mapping in mappings:
+        if not isinstance(mapping, dict):
+            continue
+        source = mapping.get("from")
+        target = mapping.get("to")
+        if not source or not target:
+            continue
+        source_norm = os.path.normcase(source)
+        path_norm = os.path.normcase(path)
+        if path_norm.startswith(source_norm):
+            return target + original[len(source) :]
+    return original
+
+
+def _extract_buffers(session):
+    buffers = []
+    if isinstance(session, dict):
+        if isinstance(session.get("buffers"), list):
+            buffers.extend(session.get("buffers"))
+        windows = session.get("windows")
+        if isinstance(windows, list):
+            for win in windows:
+                if isinstance(win, dict) and isinstance(win.get("buffers"), list):
+                    buffers.extend(win.get("buffers"))
+    return buffers
+
+
+def _collect_restore_items(session):
+    buffers = _extract_buffers(session)
+    buffer_by_id = {}
+    unnamed_buffers = []
+
+    for buf in buffers:
+        if not isinstance(buf, dict):
+            continue
+        buffer_id = buf.get("buffer_id")
+        if buffer_id is not None:
+            buffer_by_id[buffer_id] = buf
+        if not buf.get("file_name") and buf.get("contents"):
+            unnamed_buffers.append(buf)
+
+    file_paths = []
+    windows = session.get("windows", [])
+    if isinstance(windows, list):
+        for win in windows:
+            if not isinstance(win, dict):
+                continue
+            views = win.get("views", [])
+            if not isinstance(views, list):
+                continue
+            for view in views:
+                if not isinstance(view, dict):
+                    continue
+                buffer_id = view.get("buffer_id")
+                buf = buffer_by_id.get(buffer_id)
+                if buf and buf.get("file_name"):
+                    file_paths.append(buf.get("file_name"))
+                elif view.get("file_name"):
+                    file_paths.append(view.get("file_name"))
+
+    deduped = []
+    seen = set()
+    for path in file_paths:
+        if not path:
+            continue
+        if path in seen:
+            continue
+        seen.add(path)
+        deduped.append(path)
+
+    return deduped, unnamed_buffers
+
+
+def _restore_buffer_contents(view, contents):
+    if view.is_loading():
+        sublime.set_timeout(lambda: _restore_buffer_contents(view, contents), 100)
+        return
+    view.set_read_only(False)
+    view.run_command("select_all")
+    view.run_command("right_delete")
+    view.run_command("insert", {"characters": contents})
+
+
+def _restore_session_from_snapshot(path):
+    session = _parse_session_file(path)
+    if not session:
+        return
+
+    settings = _settings()
+    restore_files = settings.get("rollback_restore_open_files", True)
+    restore_buffers = settings.get("rollback_restore_unsaved_buffers", True)
+
+    file_paths, unnamed_buffers = _collect_restore_items(session)
+    window = sublime.active_window()
+    if not window:
+        return
+
+    if restore_files:
+        for raw_path in file_paths:
+            mapped = _apply_path_mappings(raw_path)
+            if os.path.exists(mapped):
+                window.open_file(mapped)
+            else:
+                sublime.status_message("SessionTimeMachine: missing file {}".format(mapped))
+
+    if restore_buffers:
+        for buf in unnamed_buffers:
+            contents = buf.get("contents")
+            if not contents:
+                continue
+            view = window.new_file()
+            name = buf.get("name")
+            if name:
+                view.set_name(name)
+            _restore_buffer_contents(view, contents)
+
+
+class SessionTimeMachineRollbackCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        snapshots = _list_session_snapshots()
+        if not snapshots:
+            sublime.status_message("SessionTimeMachine: no session snapshots found")
+            return
+        self._snapshots = snapshots
+
+        items = []
+        for ts, name, path in snapshots:
+            label = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+            items.append([label, name])
+
+        self.window.show_quick_panel(items, self._on_select_snapshot)
+
+    def _on_select_snapshot(self, index):
+        if index == -1:
+            return
+        _, _, path = self._snapshots[index]
+        sublime.set_timeout_async(lambda: _restore_session_from_snapshot(path), 0)
 
 
 def plugin_unloaded():
