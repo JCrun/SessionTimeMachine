@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "backup_on_settings_save": true,
+  "snapshot_interval_seconds": 300,
+  "retention_per_type": 200,
+  "backup_root": "",
+
+  "sync_enabled": false,
+  "sync_backend": "git",
+  "sync_min_interval_seconds": 60,
+
+  "git_executable": "git",
+  "git_repo_path": "",
+  "git_remote": "origin",
+  "git_branch": "",
+  "git_auto_commit": true,
+  "git_pull_on_startup": true,
+  "git_push_on_snapshot": true
+}
