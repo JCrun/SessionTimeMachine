@@ -551,23 +551,28 @@ def _extract_buffers(session):
 def _collect_restore_items(session):
     buffers = _extract_buffers(session)
     buffer_by_id = {}
+    buffer_by_index = {}
     unnamed_buffers = []
 
-    for buf in buffers:
+    for idx, buf in enumerate(buffers):
         if not isinstance(buf, dict):
             continue
         buffer_id = buf.get("buffer_id")
         if buffer_id is not None:
             buffer_by_id[buffer_id] = buf
             buffer_by_id[str(buffer_id)] = buf
+        buffer_by_index[idx] = buf
         if not buf.get("file_name") and buf.get("contents"):
             unnamed_buffers.append(buf)
 
     file_paths = []
     # Prefer file paths listed on buffers themselves.
     for buf in buffers:
-        if isinstance(buf, dict) and buf.get("file_name"):
-            file_paths.append(buf.get("file_name"))
+        if not isinstance(buf, dict):
+            continue
+        file_path = buf.get("file_name") or buf.get("file")
+        if file_path:
+            file_paths.append(file_path)
 
     windows = session.get("windows", [])
     if isinstance(windows, list):
@@ -582,10 +587,10 @@ def _collect_restore_items(session):
                     continue
                 buffer_id = view.get("buffer_id")
                 buf = buffer_by_id.get(buffer_id) or buffer_by_id.get(str(buffer_id))
-                if buf and buf.get("file_name"):
-                    file_paths.append(buf.get("file_name"))
-                elif view.get("file_name"):
-                    file_paths.append(view.get("file_name"))
+                if buf and (buf.get("file_name") or buf.get("file")):
+                    file_paths.append(buf.get("file_name") or buf.get("file"))
+                elif view.get("file_name") or view.get("file"):
+                    file_paths.append(view.get("file_name") or view.get("file"))
             # Some sessions store file info under sheets.
             sheets = win.get("sheets", [])
             if isinstance(sheets, list):
@@ -593,14 +598,18 @@ def _collect_restore_items(session):
                     if not isinstance(sheet, dict):
                         continue
                     view = sheet.get("view")
-                    if not isinstance(view, dict):
-                        continue
-                    buffer_id = view.get("buffer_id")
-                    buf = buffer_by_id.get(buffer_id) or buffer_by_id.get(str(buffer_id))
-                    if buf and buf.get("file_name"):
-                        file_paths.append(buf.get("file_name"))
-                    elif view.get("file_name"):
-                        file_paths.append(view.get("file_name"))
+                    if isinstance(view, dict):
+                        buffer_id = view.get("buffer_id")
+                        buf = buffer_by_id.get(buffer_id) or buffer_by_id.get(str(buffer_id))
+                        if buf and (buf.get("file_name") or buf.get("file")):
+                            file_paths.append(buf.get("file_name") or buf.get("file"))
+                        elif view.get("file_name") or view.get("file"):
+                            file_paths.append(view.get("file_name") or view.get("file"))
+                    buffer_index = sheet.get("buffer")
+                    if buffer_index is not None:
+                        buf = buffer_by_index.get(buffer_index)
+                        if buf and (buf.get("file_name") or buf.get("file")):
+                            file_paths.append(buf.get("file_name") or buf.get("file"))
 
     deduped = []
     seen = set()
