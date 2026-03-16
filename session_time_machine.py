@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import time
 
@@ -13,6 +14,7 @@ DEFAULT_RETENTION = 200
 MIN_INTERVAL_SECONDS = 10
 DEFAULT_SYNC_MIN_INTERVAL = 60
 DEFAULT_ROLLBACK_LIMIT = 200
+DEFAULT_SEARCH_LIMIT = 50
 
 
 def _to_text(value):
@@ -99,7 +101,7 @@ def _cleanup_oldest(folder, keep):
 
 def _snapshot_file(src_path, category, name_prefix):
     if not os.path.isfile(src_path):
-        return
+        return None
 
     root = _backup_root()
     folder = os.path.join(root, category, _date_stamp())
@@ -118,18 +120,25 @@ def _snapshot_file(src_path, category, name_prefix):
         shutil.copy2(src_path, dest_path)
     except Exception as exc:
         sublime.status_message("SessionTimeMachine: backup failed ({})".format(exc))
-        return
+        return None
 
     retention = int(_settings().get("retention_per_type", DEFAULT_RETENTION))
     _cleanup_oldest(folder, retention)
+    return dest_path
 
 
 def snapshot_session():
     settings = _settings()
+    paths = []
     if settings.get("snapshot_auto_save_session", True):
-        _snapshot_file(_auto_save_session_file_path(), "session", "AutoSave")
+        path = _snapshot_file(_auto_save_session_file_path(), "session", "AutoSave")
+        if path:
+            paths.append(path)
     if settings.get("snapshot_session_file", True):
-        _snapshot_file(_session_file_path(), "session", "Session")
+        path = _snapshot_file(_session_file_path(), "session", "Session")
+        if path:
+            paths.append(path)
+    _maybe_index_snapshots(paths)
     _maybe_sync_after_snapshot()
 
 
@@ -332,6 +341,116 @@ def _maybe_sync_after_snapshot():
     _git_sync.push_async()
 
 
+def _index_db_path():
+    settings = _settings()
+    custom = settings.get("index_db_path")
+    if custom:
+        return os.path.expanduser(custom)
+    return os.path.join(_backup_root(), "index.sqlite")
+
+
+def _ensure_index_db(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS snapshots ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "snapshot_path TEXT UNIQUE,"
+        "created_ts INTEGER"
+        ")"
+    )
+    conn.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS buffer_fts USING fts4("
+        "content, name, snapshot_id UNINDEXED, created_ts UNINDEXED"
+        ")"
+    )
+    conn.commit()
+
+
+def _index_row_limit():
+    settings = _settings()
+    limit = int(settings.get("index_max_rows", 5000))
+    if limit < 0:
+        limit = 0
+    return limit
+
+
+def _trim_index_if_needed(conn):
+    limit = _index_row_limit()
+    if limit <= 0:
+        return
+    row = conn.execute("SELECT COUNT(1) FROM buffer_fts").fetchone()
+    if not row:
+        return
+    count = int(row[0])
+    if count <= limit:
+        return
+    to_delete = count - limit
+    rows = conn.execute(
+        "SELECT rowid FROM buffer_fts ORDER BY created_ts ASC LIMIT ?",
+        (to_delete,),
+    ).fetchall()
+    if not rows:
+        return
+    conn.executemany("DELETE FROM buffer_fts WHERE rowid = ?", rows)
+    conn.commit()
+
+
+def _index_snapshot(path):
+    if not path or not os.path.isfile(path):
+        return
+
+    settings = _settings()
+    if not settings.get("index_enabled", True):
+        return
+
+    created_ts = int(os.path.getmtime(path))
+
+    db_path = _index_db_path()
+    _ensure_dir(os.path.dirname(db_path))
+    conn = sqlite3.connect(db_path)
+    try:
+        _ensure_index_db(conn)
+        try:
+            conn.execute(
+                "INSERT INTO snapshots (snapshot_path, created_ts) VALUES (?, ?)",
+                (path, created_ts),
+            )
+            snapshot_id = conn.execute(
+                "SELECT id FROM snapshots WHERE snapshot_path = ?",
+                (path,),
+            ).fetchone()[0]
+        except sqlite3.IntegrityError:
+            return
+
+        session = _parse_session_file(path)
+        if not session:
+            return
+
+        _, unnamed_buffers = _collect_restore_items(session)
+        entries = []
+        for buf in unnamed_buffers:
+            contents = buf.get("contents")
+            if not contents:
+                continue
+            name = buf.get("name") or "Untitled"
+            entries.append((contents, name, snapshot_id, created_ts))
+
+        if entries:
+            conn.executemany(
+                "INSERT INTO buffer_fts (content, name, snapshot_id, created_ts) VALUES (?, ?, ?, ?)",
+                entries,
+            )
+            conn.commit()
+            _trim_index_if_needed(conn)
+    finally:
+        conn.close()
+
+
+def _maybe_index_snapshots(paths):
+    if not paths:
+        return
+    sublime.set_timeout_async(lambda: [_index_snapshot(p) for p in paths], 0)
+
+
 def plugin_loaded():
     _scheduler.start()
     settings = _settings()
@@ -513,6 +632,80 @@ class SessionTimeMachineRollbackCommand(sublime_plugin.WindowCommand):
             return
         _, _, path = self._snapshots[index]
         sublime.set_timeout_async(lambda: _restore_session_from_snapshot(path), 0)
+
+
+class SessionTimeMachineSearchCommand(sublime_plugin.WindowCommand):
+    def run(self):
+        if not _settings().get("index_enabled", True):
+            sublime.status_message("SessionTimeMachine: index disabled")
+            return
+        self.window.show_input_panel(
+            "Search session history",
+            "",
+            self._on_done,
+            None,
+            None,
+        )
+
+    def _on_done(self, text):
+        query = text.strip()
+        if not query:
+            return
+
+        db_path = _index_db_path()
+        if not os.path.isfile(db_path):
+            sublime.status_message("SessionTimeMachine: index not found")
+            return
+
+        limit = int(_settings().get("search_result_limit", DEFAULT_SEARCH_LIMIT))
+        if limit <= 0:
+            limit = DEFAULT_SEARCH_LIMIT
+
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT rowid, name, substr(content, 1, 200), created_ts "
+                "FROM buffer_fts WHERE buffer_fts MATCH ? "
+                "ORDER BY created_ts DESC LIMIT ?",
+                (query, limit),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        if not rows:
+            sublime.status_message("SessionTimeMachine: no matches")
+            return
+
+        self._search_rows = rows
+        items = []
+        for _, name, preview, created_ts in rows:
+            label = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_ts))
+            items.append([label, "{} - {}".format(name, preview.replace("\n", " "))])
+
+        self.window.show_quick_panel(items, self._on_select)
+
+    def _on_select(self, index):
+        if index == -1:
+            return
+        rowid = self._search_rows[index][0]
+        db_path = _index_db_path()
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT name, content FROM buffer_fts WHERE rowid = ?",
+                (rowid,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            return
+
+        name, content = row
+        view = self.window.new_file()
+        if name:
+            view.set_name(name)
+        _restore_buffer_contents(view, content)
 
 
 def plugin_unloaded():

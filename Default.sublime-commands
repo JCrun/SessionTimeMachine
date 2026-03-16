@@ -2,5 +2,9 @@
   {
     "caption": "SessionTimeMachine: Rollback History",
     "command": "session_time_machine_rollback"
+  },
+  {
+    "caption": "SessionTimeMachine: Search History",
+    "command": "session_time_machine_search"
   }
 ]

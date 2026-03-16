@@ -13,6 +13,11 @@
   "rollback_restore_unsaved_buffers": true,
   "path_mappings": [],
 
+  "index_enabled": true,
+  "index_db_path": "",
+  "index_max_rows": 5000,
+  "search_result_limit": 50,
+
   "sync_enabled": false,
   "sync_backend": "git",
   "sync_min_interval_seconds": 60,
