@@ -492,11 +492,21 @@ def _list_session_snapshots():
     return entries
 
 
+def _decode_session_bytes(data):
+    for enc in ("utf-8", "utf-8-sig", "gbk"):
+        try:
+            return data.decode(enc)
+        except Exception:
+            continue
+    return data.decode("utf-8", "replace")
+
+
 def _parse_session_file(path):
     try:
-        with open(path, "r") as handle:
-            data = handle.read()
-        return json.loads(data)
+        with open(path, "rb") as handle:
+            raw = handle.read()
+        text = _decode_session_bytes(raw)
+        return json.loads(text)
     except Exception as exc:
         sublime.status_message("SessionTimeMachine: parse failed ({})".format(exc))
         return None
