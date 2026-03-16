@@ -564,6 +564,11 @@ def _collect_restore_items(session):
             unnamed_buffers.append(buf)
 
     file_paths = []
+    # Prefer file paths listed on buffers themselves.
+    for buf in buffers:
+        if isinstance(buf, dict) and buf.get("file_name"):
+            file_paths.append(buf.get("file_name"))
+
     windows = session.get("windows", [])
     if isinstance(windows, list):
         for win in windows:
@@ -581,6 +586,21 @@ def _collect_restore_items(session):
                     file_paths.append(buf.get("file_name"))
                 elif view.get("file_name"):
                     file_paths.append(view.get("file_name"))
+            # Some sessions store file info under sheets.
+            sheets = win.get("sheets", [])
+            if isinstance(sheets, list):
+                for sheet in sheets:
+                    if not isinstance(sheet, dict):
+                        continue
+                    view = sheet.get("view")
+                    if not isinstance(view, dict):
+                        continue
+                    buffer_id = view.get("buffer_id")
+                    buf = buffer_by_id.get(buffer_id) or buffer_by_id.get(str(buffer_id))
+                    if buf and buf.get("file_name"):
+                        file_paths.append(buf.get("file_name"))
+                    elif view.get("file_name"):
+                        file_paths.append(view.get("file_name"))
 
     deduped = []
     seen = set()
@@ -594,8 +614,10 @@ def _collect_restore_items(session):
 
     unnamed_items = []
     for idx, buf in enumerate(unnamed_buffers):
+        settings = buf.get("settings") if isinstance(buf.get("settings"), dict) else {}
         name = (
-            buf.get("name")
+            settings.get("name")
+            or buf.get("name")
             or buf.get("buffer_name")
             or buf.get("title")
             or "Untitled {}".format(idx + 1)
