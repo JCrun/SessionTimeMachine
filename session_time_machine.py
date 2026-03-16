@@ -596,9 +596,15 @@ def _restore_buffer_contents(view, contents):
         sublime.set_timeout(lambda: _restore_buffer_contents(view, contents), 100)
         return
     view.set_read_only(False)
-    view.run_command("select_all")
-    view.run_command("right_delete")
-    view.run_command("insert", {"characters": contents})
+    settings = view.settings()
+    prev_auto_indent = settings.get("auto_indent", True)
+    settings.set("auto_indent", False)
+    try:
+        view.run_command("select_all")
+        view.run_command("right_delete")
+        view.run_command("append", {"characters": contents, "force": True})
+    finally:
+        settings.set("auto_indent", prev_auto_indent)
 
 
 def _restore_session_from_snapshot(path):
