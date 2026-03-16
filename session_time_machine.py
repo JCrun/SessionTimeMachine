@@ -574,6 +574,7 @@ def _collect_restore_items(session):
         if file_path:
             file_paths.append(file_path)
 
+    sheet_settings_by_buffer_index = {}
     windows = session.get("windows", [])
     if isinstance(windows, list):
         for win in windows:
@@ -610,6 +611,11 @@ def _collect_restore_items(session):
                         buf = buffer_by_index.get(buffer_index)
                         if buf and (buf.get("file_name") or buf.get("file")):
                             file_paths.append(buf.get("file_name") or buf.get("file"))
+                        settings = sheet.get("settings")
+                        if isinstance(settings, dict):
+                            nested = settings.get("settings")
+                            if isinstance(nested, dict):
+                                sheet_settings_by_buffer_index[buffer_index] = nested
 
     deduped = []
     seen = set()
@@ -624,14 +630,29 @@ def _collect_restore_items(session):
     unnamed_items = []
     for idx, buf in enumerate(unnamed_buffers):
         settings = buf.get("settings") if isinstance(buf.get("settings"), dict) else {}
+        buf_index = None
+        for index, candidate in buffer_by_index.items():
+            if candidate is buf:
+                buf_index = index
+                break
+        sheet_settings = sheet_settings_by_buffer_index.get(buf_index, {}) if buf_index is not None else {}
         name = (
             settings.get("name")
             or buf.get("name")
             or buf.get("buffer_name")
             or buf.get("title")
+            or sheet_settings.get("auto_name")
             or "Untitled {}".format(idx + 1)
         )
-        unnamed_items.append({"name": name, "contents": buf.get("contents", "")})
+        unnamed_items.append(
+            {
+                "name": name,
+                "contents": buf.get("contents", ""),
+                "line_ending": settings.get("line_ending"),
+                "tab_size": sheet_settings.get("tab_size"),
+                "translate_tabs_to_spaces": sheet_settings.get("translate_tabs_to_spaces"),
+            }
+        )
 
     return deduped, unnamed_items
 
@@ -652,6 +673,23 @@ def _restore_buffer_contents(view, contents):
         settings.set("auto_indent", prev_auto_indent)
 
 
+def _apply_buffer_meta(view, meta):
+    if not meta:
+        return
+    line_ending = meta.get("line_ending")
+    if line_ending:
+        try:
+            view.set_line_endings(line_ending)
+        except Exception:
+            pass
+    tab_size = meta.get("tab_size")
+    if isinstance(tab_size, int) and tab_size > 0:
+        view.settings().set("tab_size", tab_size)
+    tts = meta.get("translate_tabs_to_spaces")
+    if isinstance(tts, bool):
+        view.settings().set("translate_tabs_to_spaces", tts)
+
+
 def _restore_session_from_snapshot(path):
     session = _parse_session_file(path)
     if not session:
@@ -667,9 +705,14 @@ def _restore_session_from_snapshot(path):
     if not window:
         return
 
+    data_dir = _data_dir()
     if restore_files:
         for raw_path in file_paths:
             mapped = _apply_path_mappings(raw_path)
+            norm = os.path.normcase(mapped)
+            if norm.endswith(os.path.normcase(os.path.join("Local", "Session.sublime_session"))) or \
+               norm.endswith(os.path.normcase(os.path.join("Local", "Auto Save Session.sublime_session"))):
+                continue
             if os.path.exists(mapped) or open_missing:
                 window.open_file(mapped)
             if not os.path.exists(mapped):
@@ -684,6 +727,7 @@ def _restore_session_from_snapshot(path):
             name = buf.get("name")
             if name:
                 view.set_name(name)
+            _apply_buffer_meta(view, buf)
             _restore_buffer_contents(view, contents)
 
 
