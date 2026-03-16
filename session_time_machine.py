@@ -517,7 +517,9 @@ def _apply_path_mappings(path):
     mappings = settings.get("path_mappings", [])
     if not isinstance(mappings, list):
         return path
-    original = path
+    if not path:
+        return path
+    original = path.replace("\\", os.sep)
     for mapping in mappings:
         if not isinstance(mapping, dict):
             continue
@@ -525,10 +527,11 @@ def _apply_path_mappings(path):
         target = mapping.get("to")
         if not source or not target:
             continue
-        source_norm = os.path.normcase(source)
-        path_norm = os.path.normcase(path)
+        source_norm = os.path.normcase(source.replace("\\", os.sep))
+        path_norm = os.path.normcase(original)
         if path_norm.startswith(source_norm):
-            return target + original[len(source) :]
+            target_norm = target.replace("\\", os.sep)
+            return target_norm + original[len(source_norm) :]
     return original
 
 
@@ -556,6 +559,7 @@ def _collect_restore_items(session):
         buffer_id = buf.get("buffer_id")
         if buffer_id is not None:
             buffer_by_id[buffer_id] = buf
+            buffer_by_id[str(buffer_id)] = buf
         if not buf.get("file_name") and buf.get("contents"):
             unnamed_buffers.append(buf)
 
@@ -572,7 +576,7 @@ def _collect_restore_items(session):
                 if not isinstance(view, dict):
                     continue
                 buffer_id = view.get("buffer_id")
-                buf = buffer_by_id.get(buffer_id)
+                buf = buffer_by_id.get(buffer_id) or buffer_by_id.get(str(buffer_id))
                 if buf and buf.get("file_name"):
                     file_paths.append(buf.get("file_name"))
                 elif view.get("file_name"):
@@ -588,7 +592,17 @@ def _collect_restore_items(session):
         seen.add(path)
         deduped.append(path)
 
-    return deduped, unnamed_buffers
+    unnamed_items = []
+    for idx, buf in enumerate(unnamed_buffers):
+        name = (
+            buf.get("name")
+            or buf.get("buffer_name")
+            or buf.get("title")
+            or "Untitled {}".format(idx + 1)
+        )
+        unnamed_items.append({"name": name, "contents": buf.get("contents", "")})
+
+    return deduped, unnamed_items
 
 
 def _restore_buffer_contents(view, contents):
@@ -615,6 +629,7 @@ def _restore_session_from_snapshot(path):
     settings = _settings()
     restore_files = settings.get("rollback_restore_open_files", True)
     restore_buffers = settings.get("rollback_restore_unsaved_buffers", True)
+    open_missing = settings.get("rollback_open_missing_files", True)
 
     file_paths, unnamed_buffers = _collect_restore_items(session)
     window = sublime.active_window()
@@ -624,9 +639,9 @@ def _restore_session_from_snapshot(path):
     if restore_files:
         for raw_path in file_paths:
             mapped = _apply_path_mappings(raw_path)
-            if os.path.exists(mapped):
+            if os.path.exists(mapped) or open_missing:
                 window.open_file(mapped)
-            else:
+            if not os.path.exists(mapped):
                 sublime.status_message("SessionTimeMachine: missing file {}".format(mapped))
 
     if restore_buffers:

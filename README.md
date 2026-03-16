@@ -35,6 +35,7 @@ Sublime Text 3 插件原型：提供 Session 本地快照、User 配置备份、
 - `rollback_list_limit`: 回滚列表展示的最大快照数量。
 - `rollback_restore_open_files`: 是否恢复历史打开文件。
 - `rollback_restore_unsaved_buffers`: 是否恢复未保存缓冲区。
+- `rollback_open_missing_files`: 缺失文件是否也尝试打开。
 - `path_mappings`: 跨平台路径映射。例：`[{"from": "C:\\Projects\\", "to": "/home/user/projects/"}]`。
 
 索引与搜索相关：

@@ -11,6 +11,7 @@
   "rollback_list_limit": 200,
   "rollback_restore_open_files": true,
   "rollback_restore_unsaved_buffers": true,
+  "rollback_open_missing_files": true,
   "path_mappings": [],
 
   "index_enabled": true,
