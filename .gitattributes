@@ -1,0 +1,7 @@
+# Exclude non-package files from exported archives
+/.gitignore export-ignore
+/plan.md export-ignore
+/PROJECT_PLAN.md export-ignore
+/.github export-ignore
+
+# Keep docs like README/CHANGELOG/CONTRIBUTING/LICENSE in exports
