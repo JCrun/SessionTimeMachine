@@ -64,6 +64,10 @@ def _timestamp():
     return time.strftime("%Y%m%d_%H%M%S")
 
 
+def _date_stamp():
+    return time.strftime("%Y%m%d")
+
+
 def _is_under(path, root):
     path = os.path.normcase(os.path.realpath(path))
     root = os.path.normcase(os.path.realpath(root))
@@ -75,14 +79,10 @@ def _is_under(path, root):
 def _cleanup_oldest(folder, keep):
     if keep <= 0:
         return
-    try:
-        entries = [
-            os.path.join(folder, name)
-            for name in os.listdir(folder)
-            if os.path.isfile(os.path.join(folder, name))
-        ]
-    except OSError:
-        return
+    entries = []
+    for root, _, files in os.walk(folder):
+        for name in files:
+            entries.append(os.path.join(root, name))
 
     if len(entries) <= keep:
         return
@@ -100,7 +100,7 @@ def _snapshot_file(src_path, category, name_prefix):
         return
 
     root = _backup_root()
-    folder = os.path.join(root, category)
+    folder = os.path.join(root, category, _date_stamp())
     _ensure_dir(folder)
 
     timestamp = _timestamp()

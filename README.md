@@ -36,8 +36,8 @@ Git 同步相关：
 - `git_push_on_snapshot`: 快照后推送。
 
 ## 备份目录结构
-- `.sync_backup/session`：Session 快照。
-- `.sync_backup/user`：User 配置文件快照。
+- `.sync_backup/session/YYYYMMDD`：Session 快照（按日期分目录）。
+- `.sync_backup/user/YYYYMMDD`：User 配置文件快照（按日期分目录）。
 
 ## 下一步
 - Session 解析与回滚（Quick Panel 选择历史）。
