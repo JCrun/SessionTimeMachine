@@ -3,7 +3,7 @@
 Sublime Text 3 插件原型：提供 Session 本地快照、User 配置备份与可选 Git 同步。
 
 ## 功能（当前阶段）
-- 定时备份 `.sublime_session` 到本地快照目录。
+- 定时备份 `Auto Save Session.sublime_session` 与 `Session.sublime_session` 到本地快照目录。
 - 保存 `Packages/User` 下配置文件时自动备份。
 - 按保留数量自动清理最旧快照。
 - 可选 Git 同步：启动时拉取，快照后推送。
@@ -20,6 +20,8 @@ Sublime Text 3 插件原型：提供 Session 本地快照、User 配置备份与
 - `snapshot_interval_seconds`: Session 快照间隔（秒）。
 - `retention_per_type`: 每类快照保留数量。
 - `backup_root`: 备份目录（为空则使用 Data 目录下 `.sync_backup`）。
+- `snapshot_auto_save_session`: 是否备份 `Auto Save Session.sublime_session`。
+- `snapshot_session_file`: 是否备份 `Session.sublime_session`。
 
 Git 同步相关：
 - `sync_enabled`: 是否启用同步。

@@ -36,6 +36,10 @@ def _session_file_path():
     return os.path.join(_data_dir(), "Local", "Session.sublime_session")
 
 
+def _auto_save_session_file_path():
+    return os.path.join(_data_dir(), "Local", "Auto Save Session.sublime_session")
+
+
 def _settings():
     return sublime.load_settings(SETTINGS_FILE)
 
@@ -119,7 +123,11 @@ def _snapshot_file(src_path, category, name_prefix):
 
 
 def snapshot_session():
-    _snapshot_file(_session_file_path(), "session", "Session")
+    settings = _settings()
+    if settings.get("snapshot_auto_save_session", True):
+        _snapshot_file(_auto_save_session_file_path(), "session", "AutoSave")
+    if settings.get("snapshot_session_file", True):
+        _snapshot_file(_session_file_path(), "session", "Session")
     _maybe_sync_after_snapshot()
 
 

@@ -5,6 +5,9 @@
   "retention_per_type": 200,
   "backup_root": "",
 
+  "snapshot_auto_save_session": true,
+  "snapshot_session_file": true,
+
   "sync_enabled": false,
   "sync_backend": "git",
   "sync_min_interval_seconds": 60,
